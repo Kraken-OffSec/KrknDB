@@ -31,3 +31,15 @@ func NewHash(hash, value string, hashType uint64) *kdb.Hash {
 func DefaultOptions() *kdb.Options {
 	return kdb.DefaultOptions()
 }
+
+func SetLogger(l Logger) {
+	kdb.Get().SetLogger(l)
+}
+
+func GetTotalHashes() (int, error) {
+	return kdb.Get().TotalHashes()
+}
+
+func GetHashesByType(hashType uint64) (int, error) {
+	return kdb.Get().HashesByType(hashType)
+}
