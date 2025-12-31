@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/KrakenTech-LLC/KrknDB/internal/util"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/dgraph-io/badger/v4"
 )
 
 var (

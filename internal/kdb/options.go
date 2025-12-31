@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/dgraph-io/badger/v3/options"
+	"github.com/dgraph-io/badger/v4/options"
 )
 
 type Severity int
