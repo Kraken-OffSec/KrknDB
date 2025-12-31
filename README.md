@@ -38,6 +38,165 @@ func main() {
 }
 ```
 
+
+## Query Methods
+
+### 1. Find Single Hash (Fastest)
+```go
+// O(1) - Direct lookup
+hash, err := db.GetHashByOriginalHash("5f4dcc3b5aa765d61d8327deb882cf99", 0)
+```
+**Use when:** You know the exact hash you're looking for
+
+### 2. Find Multiple Hashes (Efficient Batch)
+```go
+// O(m) - Single scan + filter
+searchList := []string{"hash1", "hash2", "hash3"}
+for hash := range db.FindHashesByHashSum(searchList, 0) {
+    // Process found hash
+}
+```
+**Use when:** Searching for 10+ hashes at once
+
+### 3. Iterate All of Type
+```go
+// O(m) - Full iteration with early termination
+for hash := range db.GetHashesByHashType(0) {
+    // Process each hash
+    if condition {
+        break // Stop early
+    }
+}
+```
+**Use when:** Processing all hashes of a specific algorithm
+
+### 4. Prefix Search
+```go
+// O(k) - Prefix scan
+for hash := range db.SearchHashesByPrefix("5f4d", 0) {
+    // Process matching hash
+}
+```
+**Use when:** Partial hash lookups
+
+## Decision Tree
+
+```
+How many hashes to find?
+│
+├─ 1 hash
+│  └─ Use: GetHashByOriginalHash()
+│     Complexity: O(1)
+│
+├─ 2-10 hashes
+│  └─ Use: Either method works
+│     Complexity: O(1) to O(m)
+│
+├─ 10+ hashes
+│  └─ Use: FindHashesByHashSum()
+│     Complexity: O(m) single scan
+│
+├─ All hashes of type
+│  └─ Use: GetHashesByHashType()
+│     Complexity: O(m) with early termination
+│
+└─ Partial match
+   └─ Use: SearchHashesByPrefix()
+      Complexity: O(k)
+```
+
+## Common Hash Types
+
+| Code | Algorithm | Example |
+|------|-----------|---------|
+| 0 | MD5 | 5f4dcc3b5aa765d61d8327deb882cf99 |
+| 100 | SHA1 | 5baa61e4c9b93f3f0682250b6cf8331b7ee68fd8 |
+| 1400 | SHA256 | 5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8 |
+| 1700 | SHA512 | b109f3bbbc244eb82441917ed06d618b9008dd09b3befd1b5e07394c706a8bb980b1d7785e5976ec049b46df5f1326af5a2ea6d103fd07c95385ffab0cacbc86 |
+| 1000 | NTLM | 8846f7eaee8fb117ad06bdd830b7586c |
+
+## Performance Tips
+
+1. **Single hash?** → Use `GetHashByOriginalHash()` (O(1))
+2. **Multiple hashes?** → Use `FindHashesByHashSum()` (single scan)
+3. **Large datasets?** → Generators prevent OOM
+4. **Don't need all results?** → Use `break` for early termination
+
+## Key Format
+```
+krkn:{hashType}:{hexEncodedSHA256OfOriginalHash}
+```
+
+Example:
+```
+Original: 5f4dcc3b5aa765d61d8327deb882cf99
+SHA256:   5f4dcc3b... → a1b2c3d4e5f6...
+Key:      krkn:0:a1b2c3d4e5f6...
+```
+
+## Error Handling
+```go
+hash, err := db.GetHashByOriginalHash("...", 0)
+if err != nil {
+    if err == badger.ErrKeyNotFound {
+        // Hash not in database
+    } else {
+        // Other error
+    }
+}
+```
+
+## Thread Safety
+✅ All methods are thread-safe  
+✅ Can be called from multiple goroutines  
+✅ Mutex-protected internally
+
+## Memory Usage
+- **Direct lookup:** O(1) - Single hash
+- **Batch search:** O(n) - HashMap of search hashes
+- **Iteration:** O(1) - One hash at a time (generator)
+
+## Examples Location
+```bash
+examples/basic_usage.go       # Basic operations
+examples/performance_demo.go  # Performance comparison
+```
+
+## Common Patterns
+
+### Batch Import
+```go
+for _, item := range importList {
+    hash := kdb.NewHash(item.Hash, item.Value, item.Type)
+    hash.Store()
+}
+```
+
+### Crack Check
+```go
+hash, err := db.GetHashByOriginalHash(unknownHash, hashType)
+if err == nil {
+    fmt.Printf("Cracked! Password: %s\n", hash.Value)
+}
+```
+
+### Export All
+```go
+for hash := range db.GetHashesByHashType(0) {
+    fmt.Printf("%s:%s\n", hash.Hash, hash.Value)
+}
+```
+
+### Batch Crack
+```go
+unknownHashes := []string{...}
+for hash := range db.FindHashesByHashSum(unknownHashes, 0) {
+    fmt.Printf("Found: %s = %s\n", hash.Hash, hash.Value)
+}
+```
+
+
+
 ## Key Format
 
 Hashes are stored with the key format:

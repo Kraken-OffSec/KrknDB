@@ -21,6 +21,7 @@ const (
 	hashTypeLookupPrefix = "krkn:%d"    // hash_type
 )
 
+// KDB represents the key-value database
 type KDB struct {
 	encryptionKey []byte
 	c             *badger.DB // badger database
@@ -30,10 +31,15 @@ type KDB struct {
 	parentFolder  string     // absolute path to the parent folder
 }
 
-func New(dbFolder string, encryptionKey []byte) (*KDB, error) {
+// New creates a new KDB instance
+// dbFolder is the folder to store the database in
+// encryptionKey is the 32-byte encryption key
+// opts is an optional set of KDBOptions
+func New(dbFolder string, encryptionKey []byte, opts ...*Options) (*KDB, error) {
 	var (
-		err     error
-		absPath string
+		err       error
+		absPath   string
+		dbOptions *Options
 	)
 
 	if len(encryptionKey) == 0 || len(encryptionKey) != 32 {
@@ -49,6 +55,13 @@ func New(dbFolder string, encryptionKey []byte) (*KDB, error) {
 	// Get the absolute path for the database file
 	dbFile := filepath.Join(absPath, "krkn.db")
 
+	if len(opts) > 0 {
+		dbOptions = DefaultOptions()
+		dbOptions.ValueDir = absPath
+	} else {
+		dbOptions = opts[0]
+	}
+
 	initOnce.Do(func() {
 		// Check if the krkn database already exists
 		isNewDB := !util.PathExists(absPath)
@@ -63,9 +76,24 @@ func New(dbFolder string, encryptionKey []byte) (*KDB, error) {
 
 		// Configure BadgerDB options
 		opts := badger.DefaultOptions(absPath).
-			WithEncryptionKey(encryptionKey).
-			WithIndexCacheSize(10 << 20).
-			WithLoggingLevel(badger.ERROR)
+			WithValueDir(absPath).                                                      // Use the same directory for data and value files
+			WithEncryptionKey(encryptionKey).                                           // Enable encryption
+			WithCompression(dbOptions.Compression).                                     // Use ZSTD compression
+			WithEncryptionKeyRotationDuration(dbOptions.EncryptionKeyRotationDuration). // Rotate keys daily
+			WithNumVersionsToKeep(dbOptions.NumVersionsToKeep).                         // Only keep the latest version of each key
+			// WithBlockCacheSize(8 << 30).                       						// 8GB block cache
+			WithIndexCacheSize(dbOptions.IndexCacheSize).                   // 10GB index cache
+			WithValueThreshold(dbOptions.ValueThreshold).                   // 64KB inline threshold
+			WithValueLogFileSize(dbOptions.ValueLogFileSize).               // 2GB log files
+			WithMemTableSize(dbOptions.MemTableSize).                       // 512MB memtables
+			WithNumMemtables(dbOptions.NumMemTables).                       // More in-RAM tables
+			WithNumCompactors(dbOptions.NumCompactors).                     // More compaction threads
+			WithNumLevelZeroTables(dbOptions.NumLevelZeroTables).           // 20 L0 tables before compaction
+			WithNumLevelZeroTablesStall(dbOptions.NumLevelZeroTablesStall). // 40 L0 tables before stalling
+			WithBaseLevelSize(dbOptions.BaseLevelSize).                     // 20GB base level
+			WithMaxLevels(dbOptions.MaxLevels).                             // 7 levels
+			WithBloomFalsePositive(dbOptions.BloomFalsePositive).           // 1% false positive rate
+			WithLogger(nil)                                                 // Disable logging for speed
 
 		// Try to open the database with retries
 		var db *badger.DB
@@ -105,6 +133,7 @@ func New(dbFolder string, encryptionKey []byte) (*KDB, error) {
 	return cache, nil
 }
 
+// Get returns the global KDB instance
 func Get() *KDB {
 	return cache
 }
@@ -114,6 +143,7 @@ func (kc *KDB) IsNew() bool {
 	return kc.isNew
 }
 
+// Close closes the database
 func (kc *KDB) Close() error {
 	kc.mu.Lock()
 	defer kc.mu.Unlock()
@@ -121,14 +151,17 @@ func (kc *KDB) Close() error {
 	return kc.c.Close()
 }
 
+// Nil returns true if the database is nil
 func (kc *KDB) Nil() bool {
 	return kc.c == nil
 }
 
+// ParentFolder returns the parent folder of the database
 func (kc *KDB) ParentFolder() string {
 	return kc.parentFolder
 }
 
+// DBPath returns the absolute path to the database file
 func (kc *KDB) DBPath() string {
 	return kc.absPath
 }
