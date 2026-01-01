@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
+	"strings"
 
 	"github.com/KrakenTech-LLC/KrknDB/internal/util"
 	"github.com/dgraph-io/badger/v4"
@@ -67,12 +68,13 @@ func (kc *KDB) GetHashBySum(hexSum string, hashType uint64) (*Hash, error) {
 
 // GetHashByOriginalHash retrieves a hash by the original hash string and hash type
 // This computes the SHA256 sum and does a direct lookup (O(1))
+// The hash is automatically normalized to lowercase for consistent lookup
 func (kc *KDB) GetHashByOriginalHash(originalHash string, hashType uint64) (*Hash, error) {
 	kc.mu.Lock()
 	defer kc.mu.Unlock()
 
-	// Compute the SHA256 sum of the original hash
-	hexSum := string(util.SHA256Sum(originalHash))
+	// Normalize to lowercase and compute the SHA256 sum of the original hash
+	hexSum := string(util.SHA256Sum(strings.ToLower(originalHash)))
 	key := []byte(fmt.Sprintf(storedHashPrefix, hashType, hexSum))
 	var hash *Hash
 
@@ -155,6 +157,7 @@ func (kc *KDB) GetHashesByHashType(hashType uint64) iter.Seq[*Hash] {
 }
 
 // FindHashes finds hashes by their hex-encoded SHA256 sum
+// All input hashes are automatically normalized to lowercase for consistent lookup
 //
 // PERFORMANCE: This efficiently scans all hashes of the given type ONCE and filters by the possible hashes.
 //
@@ -178,9 +181,10 @@ func (kc *KDB) FindHashes(possibleHashes []string, hashType uint64) iter.Seq[*Ha
 		defer kc.mu.Unlock()
 
 		// Create a map of hex sums for O(1) lookup
+		// Normalize all hashes to lowercase before computing SHA256
 		sumMap := make(map[string]bool, len(possibleHashes))
 		for _, hashStr := range possibleHashes {
-			hexSum := util.SHA256Sum(hashStr)
+			hexSum := util.SHA256Sum(strings.ToLower(hashStr))
 			sumMap[string(hexSum)] = true
 		}
 

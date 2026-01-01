@@ -2,6 +2,7 @@ package kdb
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/KrakenTech-LLC/KrknDB/internal/util"
 )
@@ -16,9 +17,10 @@ type Hash struct {
 }
 
 // NewHash creates a new Hash object
+// The hash is automatically normalized to lowercase for consistent storage and lookup
 func NewHash(hash, value string, hashType uint64) *Hash {
 	sh := &Hash{
-		Hash:     hash,
+		Hash:     strings.ToLower(hash),
 		Value:    value,
 		HashType: hashType,
 	}
