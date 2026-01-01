@@ -289,7 +289,14 @@ func (kc *KDB) getCount(key string) (int, error) {
 		}
 
 		return item.Value(func(val []byte) error {
-			count = int(binary.BigEndian.Uint64(val))
+			if len(val) == 8 {
+				// Binary format
+				count = int(binary.BigEndian.Uint64(val))
+			} else {
+				// String format (legacy or corrupted data)
+				_, err := fmt.Sscanf(string(val), "%d", &count)
+				return err
+			}
 			return nil
 		})
 	})
@@ -302,6 +309,9 @@ func (kc *KDB) getCount(key string) (int, error) {
 }
 
 func (kc *KDB) updateCount(key string, delta int) error {
+	kc.mu.Lock()
+	defer kc.mu.Unlock()
+
 	return kc.c.Update(func(txn *badger.Txn) error {
 		var count int
 		item, err := txn.Get([]byte(key))
@@ -311,7 +321,14 @@ func (kc *KDB) updateCount(key string, delta int) error {
 
 		if err == nil {
 			err = item.Value(func(val []byte) error {
-				count = int(binary.BigEndian.Uint64(val))
+				if len(val) == 8 {
+					// Binary format
+					count = int(binary.BigEndian.Uint64(val))
+				} else {
+					// String format (legacy or corrupted data)
+					_, err := fmt.Sscanf(string(val), "%d", &count)
+					return err
+				}
 				return nil
 			})
 			if err != nil {
@@ -320,13 +337,19 @@ func (kc *KDB) updateCount(key string, delta int) error {
 		}
 
 		count += delta
-		return txn.Set([]byte(key), []byte(fmt.Sprintf("%d", count)))
+		// Store as binary uint64 (8 bytes)
+		buf := make([]byte, 8)
+		binary.BigEndian.PutUint64(buf, uint64(count))
+		return txn.Set([]byte(key), buf)
 	})
 }
 
 func (kc *KDB) initializeCounter(key string, initial int) error {
 	return kc.c.Update(func(txn *badger.Txn) error {
-		return txn.Set([]byte(key), []byte(fmt.Sprintf("%d", initial)))
+		// Store as binary uint64 (8 bytes)
+		buf := make([]byte, 8)
+		binary.BigEndian.PutUint64(buf, uint64(initial))
+		return txn.Set([]byte(key), buf)
 	})
 }
 
