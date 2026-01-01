@@ -213,9 +213,6 @@ func (kc *KDB) SetLogger(l Logger) {
 // incrementTotalHashCount increments the total hash count.
 // Creates the key if it doesn't exist
 func (kc *KDB) incrementTotalHashCount() {
-	kc.mu.Lock()
-	defer kc.mu.Unlock()
-
 	// Check if the key exists
 	err := kc.checkCounter(totalHashesKey)
 	if err != nil {
