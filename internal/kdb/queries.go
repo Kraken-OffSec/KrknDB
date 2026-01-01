@@ -303,6 +303,12 @@ func (kc *KDB) getCount(key string) (int, error) {
 }
 
 func (kc *KDB) updateCount(key string, delta int) error {
+	// Check if the key exists
+	// If it doesn't, create it with the initial value
+	// Otherwise, increment the value
+	kc.mu.Lock()
+	defer kc.mu.Unlock()
+
 	return kc.c.Update(func(txn *badger.Txn) error {
 		var count int
 		item, err := txn.Get([]byte(key))
@@ -329,4 +335,39 @@ func (kc *KDB) initializeCounter(key string, initial int) error {
 	return kc.c.Update(func(txn *badger.Txn) error {
 		return txn.Set([]byte(key), []byte(fmt.Sprintf("%d", initial)))
 	})
+}
+
+func (kc *KDB) checkCounter(key string) error {
+	var exists bool
+
+	err := kc.c.View(func(txn *badger.Txn) error {
+		_, err := txn.Get([]byte(key))
+		if err == badger.ErrKeyNotFound {
+			exists = false
+			return nil
+		}
+
+		if err != nil {
+			logger(fmt.Sprintf("failed to check counter: %v", err), Error)
+			return err
+		}
+
+		exists = true
+		return nil
+	})
+
+	if err != nil {
+		logger(fmt.Sprintf("failed to check counter: %v", err), Error)
+		return err
+	}
+
+	if !exists {
+		err = kc.initializeCounter(key, 0)
+		if err != nil {
+			logger(fmt.Sprintf("failed to initialize counter: %v", err), Error)
+			return err
+		}
+	}
+
+	return err
 }

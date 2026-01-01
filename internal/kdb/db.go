@@ -213,7 +213,16 @@ func (kc *KDB) SetLogger(l Logger) {
 // incrementTotalHashCount increments the total hash count.
 // Creates the key if it doesn't exist
 func (kc *KDB) incrementTotalHashCount() {
-	err := krkn.updateCount(totalHashesKey, 1)
+	kc.mu.Lock()
+	defer kc.mu.Unlock()
+
+	// Check if the key exists
+	err := kc.checkCounter(totalHashesKey)
+	if err != nil {
+		logger(fmt.Sprintf("failed to check total hash count: %v", err), Error)
+	}
+
+	err = krkn.updateCount(totalHashesKey, 1)
 	if err != nil {
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			logger("total hash count not found, initializing", Info)
@@ -231,7 +240,14 @@ func (kc *KDB) incrementTotalHashCount() {
 // Creates the key if it doesn't exist
 func (kc *KDB) incrementHashTypeCount(hashType uint64) {
 	prefix := fmt.Sprintf(hashTypeLookupPrefix, hashType)
-	err := kc.updateCount(prefix, 1)
+
+	// Check if the key exists
+	err := kc.checkCounter(prefix)
+	if err != nil {
+		logger(fmt.Sprintf("failed to check hash type count: %v", err), Error)
+	}
+
+	err = kc.updateCount(prefix, 1)
 	if err != nil {
 		if errors.Is(err, badger.ErrKeyNotFound) {
 			logger("hash type count not found, initializing", Info)
