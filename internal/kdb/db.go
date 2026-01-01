@@ -50,9 +50,9 @@ func New(dbFolder string, encryptionKey []byte, opts ...*Options) (*KDB, error) 
 	)
 
 	if len(opts) > 0 {
-		dbOptions = DefaultOptions()
-	} else {
 		dbOptions = opts[0]
+	} else {
+		dbOptions = DefaultOptions()
 	}
 
 	logger = dbOptions.Logger
