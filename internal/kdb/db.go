@@ -1,6 +1,7 @@
 package kdb
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"os"
@@ -25,6 +26,9 @@ const (
 	// Counters
 	totalHashesKey      = "krkn:total_hashes"
 	hashTypeCountPrefix = "krkn:num:%d" // hash_type
+
+	// Registry
+	hashTypeRegistryKey = "krkn:registry:hash_types" // Stores map of all hash types
 )
 
 // KDB represents the key-value database
@@ -234,7 +238,7 @@ func (kc *KDB) incrementTotalHashCount() {
 }
 
 // incrementHashTypeCount increments the hash type count.
-// Creates the key if it doesn't exist
+// Creates the key if it doesn't exist and registers the hash type
 func (kc *KDB) incrementHashTypeCount(hashType uint64) {
 	prefix := fmt.Sprintf(hashTypeLookupPrefix, hashType)
 
@@ -242,6 +246,11 @@ func (kc *KDB) incrementHashTypeCount(hashType uint64) {
 	err := kc.checkCounter(prefix)
 	if err != nil {
 		logger(fmt.Sprintf("failed to check hash type count: %v", err), Error)
+	}
+
+	// Register this hash type if it's new
+	if err := kc.registerHashType(hashType); err != nil {
+		logger(fmt.Sprintf("failed to register hash type %d: %v", hashType, err), Error)
 	}
 
 	err = kc.updateCount(prefix, 1)
@@ -257,6 +266,91 @@ func (kc *KDB) incrementHashTypeCount(hashType uint64) {
 		logger(fmt.Sprintf("failed to update hash type count: %v", err), Error)
 		fmt.Printf("failed to update hash type count: %v\n", err)
 	}
+}
+
+// registerHashType adds a hash type to the registry if it doesn't exist
+func (kc *KDB) registerHashType(hashType uint64) error {
+	kc.mu.Lock()
+	defer kc.mu.Unlock()
+
+	return kc.c.Update(func(txn *badger.Txn) error {
+		// Get existing registry
+		registry := make(map[uint64]bool)
+		item, err := txn.Get([]byte(hashTypeRegistryKey))
+
+		if err == nil {
+			// Registry exists, unmarshal it
+			err = item.Value(func(val []byte) error {
+				// Registry is stored as a list of uint64s
+				for i := 0; i < len(val); i += 8 {
+					if i+8 <= len(val) {
+						ht := binary.BigEndian.Uint64(val[i : i+8])
+						registry[ht] = true
+					}
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+		} else if err != badger.ErrKeyNotFound {
+			return err
+		}
+
+		// Add the new hash type if not already present
+		if !registry[hashType] {
+			registry[hashType] = true
+
+			// Serialize the registry
+			buf := make([]byte, len(registry)*8)
+			i := 0
+			for ht := range registry {
+				binary.BigEndian.PutUint64(buf[i:i+8], ht)
+				i += 8
+			}
+
+			return txn.Set([]byte(hashTypeRegistryKey), buf)
+		}
+
+		return nil
+	})
+}
+
+// getRegisteredHashTypes returns all registered hash types (internal method)
+func (kc *KDB) getRegisteredHashTypes() ([]uint64, error) {
+	kc.mu.Lock()
+	defer kc.mu.Unlock()
+
+	var hashTypes []uint64
+
+	err := kc.c.View(func(txn *badger.Txn) error {
+		item, err := txn.Get([]byte(hashTypeRegistryKey))
+		if err == badger.ErrKeyNotFound {
+			return nil // No hash types registered yet
+		}
+		if err != nil {
+			return err
+		}
+
+		return item.Value(func(val []byte) error {
+			// Parse the registry
+			for i := 0; i < len(val); i += 8 {
+				if i+8 <= len(val) {
+					ht := binary.BigEndian.Uint64(val[i : i+8])
+					hashTypes = append(hashTypes, ht)
+				}
+			}
+			return nil
+		})
+	})
+
+	return hashTypes, err
+}
+
+// GetRegisteredHashTypes returns all hash types that have been stored in the database
+// This is useful for knowing which hash types exist without scanning all keys
+func (kc *KDB) GetRegisteredHashTypes() ([]uint64, error) {
+	return kc.getRegisteredHashTypes()
 }
 
 // runPeriodicCompaction runs periodic compaction on the database
